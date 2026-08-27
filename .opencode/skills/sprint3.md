@@ -5,8 +5,8 @@ Implementar la lógica central del tipo de cambio, simulación de conversiones y
 
 ## Entidades del Modelo de Datos
 - **Divisa**: codigo_iso (USD, EUR, BRL, ARS, PYG - Moneda base: PYG), 
-ombre, simbolo, ctiva.
-- **TasaCambio**: divisa (FK), precio_compra, precio_venta, echa_actualizacion.
+ombre, simbolo, activa.
+- **TasaCambio**: divisa (FK), precio_compra, precio_venta, fecha_actualizacion.
 - **Cliente**: Categorías (MINORISTA, CORPORATIVO, VIP).
 
 ## Reglas de Negocio Financieras (CRÍTICO)

@@ -3,7 +3,7 @@ import json
 import base64
 
 email = 'diegocan1804@gmail.com'
-token = 'ATATT3xFfGF0aUOWxABPU673WAVc7xiliCK_w-drXktItV3hZEcmHz_IS3LNPwgnXnWBIpVWwiVyzEgSjhb04UwbUMxr5li73Tl_fI0-c8buwJCchusbyW53FE3U93onRgSd_yaloAftlWt9jfrKV7p6fZHg3SrmX16jzUEzkCqXD8-8xhimBgY=6AA6D6B1'
+token = 'ATATT3xFfGF0STyUFWbjVGPQhPFZcsHg7_48vQHClSJTyRyEoCfLw4cMdoVJbGwflemOFtIoATF0q9dcuNHT5WqwojGW2J0h16UgQV94rRsmxBx54DND3jcjvYePN0PI4aQYp6FN8SylxBduDI8h7kJHh1rT3SS4gg8qf0YVE-yYYKhjrelEp-M=7A21EC28'
 credentials = f"{email}:{token}"
 encoded = base64.b64encode(credentials.encode()).decode()
 

@@ -10,7 +10,8 @@ Implementar las integraciones externas mockeadas/pseudo-integraciones para cobro
    - PasarelaPagosAPIService: Pseudo-integración con métodos procesar_pago_virtual() y confirmar_recepcion_fondos().
 2. **Facturación Electrónica SIFEN (RF30, RF31, RNF18)**:
    - Factura: 
-umero_factura, pago (OneToOne), estado (EMITIDA, APROBADA, RECHAZADA), echa_emision, espuesta_api_fiscal (JSON).
+umero_factura, pago (OneToOne), estado (EMITIDA, APROBADA, RECHAZADA), fecha_emision, 
+espuesta_api_fiscal (JSON).
    - FacturacionAPIService:
      - emitir_comprobante_fiscal(transaccion_id): Envía datos a SIFEN y recibe CDC/QR.
      - sincronizar_estado_factura().

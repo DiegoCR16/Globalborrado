@@ -5,7 +5,7 @@ Implementar el ciclo de vida completo de las operaciones transaccionales cambiar
 
 ## Entidades y Modelos
 - **Transaccion**: 
-umero_operacion, cliente (FK), divisa_origen, divisa_destino, monto_origen, monto_destino, 	asa_aplicada, estado_actual (PENDIENTE, PAGADO, CANCELADO, ANULADO), echa_hora.
+umero_operacion, cliente (FK), divisa_origen, divisa_destino, monto_origen, monto_destino, 	asa_aplicada, estado_actual (PENDIENTE, PAGADO, CANCELADO, ANULADO), fecha_hora.
 - **DetalleTransaccion**: subtotal, comision.
 - **HistorialEstadoTransaccion**: estado_anterior, estado_nuevo, motivo_cambio, 	imestamp, modificado_por.
 
