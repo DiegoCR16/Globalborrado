@@ -2,7 +2,7 @@ from django.test import TestCase
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from rest_framework import status
-from .models import UserProfile, AuditLog, Role, SystemPermission
+from .models import UserProfile, AuditLog, Role, SystemPermission, Customer, TransactionLimit, KYCAlert
 
 
 class AuthenticationTests(TestCase):
@@ -386,3 +386,108 @@ class CorporateCustomerSegmentationTests(TestCase):
         response = self.client.get('/customers/corporate/admin/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTemplateUsed(response, 'authentication/corporate_customer_admin.html')
+
+
+class KYCLimitsAndComplianceTests(TestCase):
+    """
+    Test suite for Transaction Limit Validation, KYC Compliance Alerts, and Parameterization (PSE-6).
+    """
+
+    def setUp(self):
+        """
+        Sets up admin user, customer, and test client.
+        """
+        self.admin_user = User.objects.create_user(username='admin_kyc', password='password123', is_staff=True)
+        self.admin_profile, _ = UserProfile.objects.get_or_create(user=self.admin_user, role='ADMIN')
+
+        self.customer = Customer.objects.create(
+            first_name='María',
+            last_name='González',
+            document_number='3456789-2',
+            client_type='VIP',
+            email='maria.gonzalez@example.com'
+        )
+        self.client = APIClient()
+
+    def test_transaction_limit_parameterization(self):
+        """
+        Tests parameterizing transaction limits for a client type (PSE-6).
+        """
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post('/api/limits/', {
+            'client_type': 'VIP',
+            'min_amount': '100000.00',
+            'max_amount': '2000000000.00',
+            'daily_limit': '10000000000.00'
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(float(response.data['max_amount']), 2000000000.00)
+
+        log_entry = AuditLog.objects.filter(action='TRANSACTION_LIMIT_UPDATED').first()
+        self.assertIsNotNone(log_entry)
+
+    def test_transaction_validation_success_and_kyc_alert(self):
+        """
+        Tests transaction validation within limits and automatic high-value KYC alert generation (> 50M PYG).
+        """
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post('/api/transactions/validate-limit/', {
+            'customer_id': self.customer.id,
+            'amount': 75000000.00  # 75 Million PYG (> 50M threshold)
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['kyc_alert_generated'])
+
+        # Verify KYC Alert created in DB
+        alert = KYCAlert.objects.filter(customer=self.customer, alert_type='HIGH_VALUE_TRANSACTION').first()
+        self.assertIsNotNone(alert)
+        self.assertEqual(alert.status, 'PENDING')
+
+    def test_transaction_validation_limit_exceeded(self):
+        """
+        Tests transaction rejection and LIMIT_EXCEEDED KYC alert when amount exceeds max limit.
+        """
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post('/api/transactions/validate-limit/', {
+            'customer_id': self.customer.id,
+            'amount': 2000000000.00  # 2 Billion PYG (> default 1B max limit)
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('error', response.data)
+
+        alert = KYCAlert.objects.filter(customer=self.customer, alert_type='LIMIT_EXCEEDED').first()
+        self.assertIsNotNone(alert)
+
+    def test_kyc_alert_status_update(self):
+        """
+        Tests updating KYC alert status (e.g. marking as REVIEWED or RESOLVED).
+        """
+        self.client.force_authenticate(user=self.admin_user)
+        alert = KYCAlert.objects.create(
+            customer=self.customer,
+            alert_type='HIGH_VALUE_TRANSACTION',
+            amount=60000000.00,
+            status='PENDING'
+        )
+
+        response = self.client.patch(f'/api/kyc-alerts/{alert.id}/', {
+            'status': 'RESOLVED'
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'RESOLVED')
+
+        log_entry = AuditLog.objects.filter(action='KYC_ALERT_UPDATED').first()
+        self.assertIsNotNone(log_entry)
+
+    def test_kyc_limits_admin_ui_template(self):
+        """
+        Tests that admin user can access the HTML template view for KYC limits and alerts admin.
+        """
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get('/limits/kyc/admin/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTemplateUsed(response, 'authentication/kyc_limits_admin.html')

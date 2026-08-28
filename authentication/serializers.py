@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Role, SystemPermission, Customer
+from .models import Role, SystemPermission, Customer, TransactionLimit, KYCAlert
 
 class SystemPermissionSerializer(serializers.ModelSerializer):
     """
@@ -147,3 +147,42 @@ class CorporateCustomerRegisterSerializer(serializers.Serializer):
             keycloak_synced=True
         )
         return customer
+
+
+class TransactionLimitSerializer(serializers.ModelSerializer):
+    """
+    Serializer for TransactionLimit model (PSE-6).
+    
+    Attributes:
+        id (int): Limit ID.
+        client_type (str): Customer category ('RETAIL', 'CORPORATE', 'VIP').
+        min_amount (Decimal): Minimum transactional amount.
+        max_amount (Decimal): Maximum transactional amount.
+        daily_limit (Decimal): Daily cumulative limit.
+        is_active (bool): Active status.
+        updated_at (datetime): Last updated timestamp.
+    """
+    class Meta:
+        model = TransactionLimit
+        fields = ['id', 'client_type', 'min_amount', 'max_amount', 'daily_limit', 'is_active', 'updated_at']
+
+
+class KYCAlertSerializer(serializers.ModelSerializer):
+    """
+    Serializer for KYCAlert model (PSE-6).
+    
+    Attributes:
+        id (int): Alert ID.
+        customer (Customer): Associated customer ID.
+        customer_name (str): Customer representation string.
+        alert_type (str): Type of KYC alert.
+        amount (Decimal): Triggering amount.
+        status (str): Alert status ('PENDING', 'REVIEWED', 'RESOLVED').
+        details (str): Additional details.
+        created_at (datetime): Creation timestamp.
+    """
+    customer_name = serializers.CharField(source='customer.__str__', read_only=True)
+
+    class Meta:
+        model = KYCAlert
+        fields = ['id', 'customer', 'customer_name', 'alert_type', 'amount', 'status', 'details', 'created_at']

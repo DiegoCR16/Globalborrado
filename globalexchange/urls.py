@@ -16,7 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from authentication.views import RoleAdminTemplateView, CustomerAdminTemplateView, CorporateCustomerAdminTemplateView
+from authentication.views import RoleAdminTemplateView, CustomerAdminTemplateView, CorporateCustomerAdminTemplateView, KYCLimitsAdminTemplateView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -24,4 +24,5 @@ urlpatterns = [
     path('roles/admin/', RoleAdminTemplateView.as_view(), name='roles-admin-ui-root'),
     path('customers/admin/', CustomerAdminTemplateView.as_view(), name='customers-admin-ui-root'),
     path('customers/corporate/admin/', CorporateCustomerAdminTemplateView.as_view(), name='corporate-customer-admin-ui-root'),
+    path('limits/kyc/admin/', KYCLimitsAdminTemplateView.as_view(), name='kyc-limits-admin-ui-root'),
 ]

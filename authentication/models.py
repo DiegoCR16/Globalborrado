@@ -172,3 +172,60 @@ class Customer(models.Model):
         name = self.company_name or f"{self.first_name or ''} {self.last_name or ''}".strip()
         doc = self.ruc or self.document_number or 'N/A'
         return f"{name} ({doc}) - {self.client_type}"
+
+
+class TransactionLimit(models.Model):
+    """
+    Model representing transactional limits parametrized by customer profile / client type (PSE-6).
+    
+    Attributes:
+        client_type (str): Category ('RETAIL', 'CORPORATE', 'VIP').
+        min_amount (Decimal): Minimum amount per transaction in PYG.
+        max_amount (Decimal): Maximum amount per transaction in PYG.
+        daily_limit (Decimal): Maximum daily transactional amount.
+        is_active (bool): Whether the limit rule is active.
+    """
+    client_type = models.CharField(max_length=50, unique=True, choices=Customer.CLIENT_TYPE_CHOICES)
+    min_amount = models.DecimalField(max_digits=15, decimal_places=2, default=50000.00)
+    max_amount = models.DecimalField(max_digits=15, decimal_places=2, default=1000000000.00)
+    daily_limit = models.DecimalField(max_digits=18, decimal_places=2, default=5000000000.00)
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        """
+        Returns string representation of transaction limit.
+        """
+        return f"Límite {self.client_type}: Min {self.min_amount} - Max {self.max_amount} PYG"
+
+
+class KYCAlert(models.Model):
+    """
+    Model representing KYC compliance alerts generated for high-value or suspicious transactions (PSE-6).
+    
+    Attributes:
+        customer (Customer): Associated customer.
+        alert_type (str): Type of alert (e.g., 'HIGH_VALUE_TRANSACTION', 'LIMIT_EXCEEDED').
+        amount (Decimal): Transaction amount that triggered the alert.
+        status (str): Alert status ('PENDING', 'REVIEWED', 'RESOLVED').
+        details (str): Additional context or description.
+        created_at (datetime): Timestamp when alert was generated.
+    """
+    STATUS_CHOICES = [
+        ('PENDING', 'Pendiente de Revisión'),
+        ('REVIEWED', 'En Revisión'),
+        ('RESOLVED', 'Resuelto / Aprobado'),
+    ]
+
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='kyc_alerts')
+    alert_type = models.CharField(max_length=100)
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='PENDING')
+    details = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        """
+        Returns string representation of KYC alert.
+        """
+        return f"KYC Alert [{self.alert_type}] - {self.customer} - {self.amount} PYG [{self.status}]"

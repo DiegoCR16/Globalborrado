@@ -12,7 +12,10 @@ from .views import (
     CustomerAdminTemplateView,
     CorporateCustomerRegisterView,
     CustomerClassificationView,
-    CorporateCustomerAdminTemplateView
+    CorporateCustomerAdminTemplateView,
+    TransactionLimitView,
+    KYCAlertView,
+    TransactionLimitValidationView
 )
 
 urlpatterns = [
@@ -29,4 +32,8 @@ urlpatterns = [
     path('corporate-customers/register/', CorporateCustomerRegisterView.as_view(), name='corporate-customer-register'),
     path('customers/classification/', CustomerClassificationView.as_view(), name='customer-classification'),
     path('customers/corporate/admin/', CorporateCustomerAdminTemplateView.as_view(), name='corporate-customer-admin-ui'),
+    path('limits/', TransactionLimitView.as_view(), name='transaction-limits'),
+    path('kyc-alerts/', KYCAlertView.as_view(), name='kyc-alerts'),
+    path('kyc-alerts/<int:pk>/', KYCAlertView.as_view(), name='kyc-alert-detail'),
+    path('transactions/validate-limit/', TransactionLimitValidationView.as_view(), name='transaction-validate-limit'),
 ]

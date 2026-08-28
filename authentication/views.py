@@ -7,8 +7,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, BasePermission
-from .models import AuditLog, UserProfile, Role, SystemPermission, Customer
-from .serializers import RoleSerializer, SystemPermissionSerializer, CustomerSerializer, CorporateCustomerRegisterSerializer
+from .models import AuditLog, UserProfile, Role, SystemPermission, Customer, TransactionLimit, KYCAlert
+from .serializers import (
+    RoleSerializer, SystemPermissionSerializer, CustomerSerializer, 
+    CorporateCustomerRegisterSerializer, TransactionLimitSerializer, KYCAlertSerializer
+)
 
 
 class IsAdminOrHasRolePermission(BasePermission):
@@ -623,5 +626,175 @@ class CorporateCustomerAdminTemplateView(APIView):
         Renders the corporate customer administration and classification HTML interface.
         """
         return render(request, 'authentication/corporate_customer_admin.html', {
+            'username': request.user.username
+        })
+
+
+class TransactionLimitView(APIView):
+    """
+    API view for parameterizing and managing transaction limits per customer profile / client type (PSE-6).
+    """
+    permission_classes = [IsAuthenticated, IsAdminOrHasRolePermission]
+
+    def get(self, request):
+        """
+        Lists all transaction limits by client type.
+        """
+        limits = TransactionLimit.objects.all()
+        serializer = TransactionLimitSerializer(limits, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """
+        Creates or updates transaction limits for a specific client type.
+        """
+        client_type = request.data.get('client_type')
+        if not client_type:
+            return Response({"error": "client_type es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        limit_obj, created = TransactionLimit.objects.get_or_create(client_type=client_type)
+        serializer = TransactionLimitSerializer(limit_obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            AuditLog.objects.create(
+                user_identifier=request.user.username,
+                action='TRANSACTION_LIMIT_UPDATED',
+                ip_address=request.META.get('REMOTE_ADDR', '127.0.0.1'),
+                details=f"Límites transaccionales actualizados para {client_type}."
+            )
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class KYCAlertView(APIView):
+    """
+    API view for managing KYC compliance alerts (PSE-6).
+    """
+    permission_classes = [IsAuthenticated, IsAdminOrHasRolePermission]
+
+    def get(self, request):
+        """
+        Lists all KYC compliance alerts with optional status filtering.
+        """
+        status_filter = request.query_params.get('status')
+        alerts = KYCAlert.objects.all()
+        if status_filter:
+            alerts = alerts.filter(status=status_filter)
+        serializer = KYCAlertSerializer(alerts, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def patch(self, request, pk):
+        """
+        Updates KYC alert status (e.g., mark as REVIEWED or RESOLVED).
+        """
+        try:
+            alert = KYCAlert.objects.get(pk=pk)
+        except KYCAlert.DoesNotExist:
+            return Response({"error": "Alerta KYC no encontrada."}, status=status.HTTP_404_NOT_FOUND)
+
+        new_status = request.data.get('status')
+        if new_status not in ['PENDING', 'REVIEWED', 'RESOLVED']:
+            return Response({"error": "Estado de alerta KYC inválido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        alert.status = new_status
+        alert.save()
+
+        AuditLog.objects.create(
+            user_identifier=request.user.username,
+            action='KYC_ALERT_UPDATED',
+            ip_address=request.META.get('REMOTE_ADDR', '127.0.0.1'),
+            details=f"Alerta KYC #{alert.id} actualizada a {new_status}."
+        )
+
+        return Response(KYCAlertSerializer(alert).data, status=status.HTTP_200_OK)
+
+
+class TransactionLimitValidationView(APIView):
+    """
+    API view validating transactions against profile limits and triggering KYC alerts when applicable (PSE-6).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """
+        Validates if transaction amount complies with client type limits and generates KYC alert if high value.
+        
+        Request data:
+            customer_id (int): Customer ID.
+            amount (float/Decimal): Transaction amount in PYG.
+        """
+        customer_id = request.data.get('customer_id')
+        amount = request.data.get('amount')
+
+        if not customer_id or amount is None:
+            return Response({"error": "customer_id y amount son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            customer = Customer.objects.get(pk=customer_id)
+        except Customer.DoesNotExist:
+            return Response({"error": "Cliente no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            amount_dec = float(amount)
+        except ValueError:
+            return Response({"error": "Monto inválido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get transaction limits for customer client type (defaults if not set)
+        limit_config, _ = TransactionLimit.objects.get_or_create(
+            client_type=customer.client_type,
+            defaults={
+                'min_amount': 50000.00,
+                'max_amount': 1000000000.00,
+                'daily_limit': 5000000000.00
+            }
+        )
+
+        errors = []
+        if amount_dec < float(limit_config.min_amount):
+            errors.append(f"El monto es inferior al límite mínimo permitido ({limit_config.min_amount} PYG).")
+        if amount_dec > float(limit_config.max_amount):
+            errors.append(f"El monto excede el límite máximo permitido para {customer.client_type} ({limit_config.max_amount} PYG).")
+
+        if errors:
+            KYCAlert.objects.create(
+                customer=customer,
+                alert_type='LIMIT_EXCEEDED',
+                amount=amount_dec,
+                status='PENDING',
+                details=f"Transacción rechazada por límites: {'; '.join(errors)}"
+            )
+            return Response({"error": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check high-value KYC alert threshold (e.g. > 50,000,000 PYG)
+        kyc_alert_triggered = False
+        if amount_dec > 50000000.00:
+            kyc_alert_triggered = True
+            KYCAlert.objects.create(
+                customer=customer,
+                alert_type='HIGH_VALUE_TRANSACTION',
+                amount=amount_dec,
+                status='PENDING',
+                details=f"Alerta KYC: Transacción de alto valor ({amount_dec} PYG) requiere revisión de cumplimiento."
+            )
+
+        return Response({
+            'message': 'Transacción validada exitosamente dentro de los límites.',
+            'client_type': customer.client_type,
+            'amount': amount_dec,
+            'kyc_alert_generated': kyc_alert_triggered
+        }, status=status.HTTP_200_OK)
+
+
+class KYCLimitsAdminTemplateView(APIView):
+    """
+    Frontend view rendering the KYC limits parameterization and alerts management GUI (PSE-6).
+    """
+    permission_classes = [IsAuthenticated, IsAdminOrHasRolePermission]
+
+    def get(self, request):
+        """
+        Renders the KYC limits and alerts HTML interface.
+        """
+        return render(request, 'authentication/kyc_limits_admin.html', {
             'username': request.user.username
         })
