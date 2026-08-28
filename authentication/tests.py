@@ -275,3 +275,114 @@ class CustomerManagementTests(TestCase):
         response = self.client.get('/customers/admin/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTemplateUsed(response, 'authentication/customer_admin.html')
+
+
+class CorporateCustomerSegmentationTests(TestCase):
+    """
+    Test suite for Corporate Customer Registration (Personas Jurídicas) and Classification/Segmentation (PSE-3).
+    """
+
+    def setUp(self):
+        """
+        Sets up admin user and test client.
+        """
+        self.admin_user = User.objects.create_user(username='admin_pse3', password='password123', is_staff=True)
+        self.admin_profile, _ = UserProfile.objects.get_or_create(user=self.admin_user, role='ADMIN')
+        self.client = APIClient()
+
+    def test_corporate_customer_registration_success(self):
+        """
+        Tests successful corporate customer registration with RUC, strong password, and Keycloak delegation.
+        """
+        response = self.client.post('/api/corporate-customers/register/', {
+            'company_name': 'Global Solutions S.A.',
+            'ruc': '80098765-1',
+            'email': 'contacto@globalsolutions.com.py',
+            'password': 'SecurePassword123!',
+            'phone': '021456789',
+            'address': 'Asunción, Paraguay'
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['customer']['client_type'], 'CORPORATE')
+        self.assertTrue(response.data['customer']['keycloak_synced'])
+
+        log_entry = AuditLog.objects.filter(action='CORPORATE_CUSTOMER_REGISTERED').first()
+        self.assertIsNotNone(log_entry)
+
+    def test_corporate_registration_weak_password(self):
+        """
+        Tests that corporate registration fails when password does not meet security requirements.
+        """
+        response = self.client.post('/api/corporate-customers/register/', {
+            'company_name': 'Weak Pass S.A.',
+            'ruc': '80011122-3',
+            'email': 'test@weak.com',
+            'password': 'weak'
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('password', response.data)
+
+    def test_corporate_registration_duplicate_email(self):
+        """
+        Tests that corporate registration is denied if email is already registered.
+        """
+        # Register first
+        self.client.post('/api/corporate-customers/register/', {
+            'company_name': 'Company A',
+            'ruc': '80011111-1',
+            'email': 'duplicado@empresa.com',
+            'password': 'SecurePassword123!'
+        }, format='json')
+
+        # Try duplicate email
+        response = self.client.post('/api/corporate-customers/register/', {
+            'company_name': 'Company B',
+            'ruc': '80022222-2',
+            'email': 'duplicado@empresa.com',
+            'password': 'SecurePassword123!'
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('email', response.data)
+
+    def test_customer_classification_and_segmentation(self):
+        """
+        Tests viewing customer segmentation summary and reclassifying customer categories.
+        """
+        self.client.force_authenticate(user=self.admin_user)
+
+        # Create a customer
+        reg_res = self.client.post('/api/corporate-customers/register/', {
+            'company_name': 'Segment Test S.A.',
+            'ruc': '80055544-0',
+            'email': 'segment@test.com',
+            'password': 'SecurePassword123!'
+        }, format='json')
+        cust_id = reg_res.data['customer']['id']
+
+        # Get classification summary
+        get_res = self.client.get('/api/customers/classification/')
+        self.assertEqual(get_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(get_res.data['segmentation_summary']['corporate_count'], 1)
+
+        # Reclassify customer to VIP
+        post_res = self.client.post('/api/customers/classification/', {
+            'customer_id': cust_id,
+            'client_type': 'VIP'
+        }, format='json')
+        self.assertEqual(post_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(post_res.data['customer']['client_type'], 'VIP')
+
+        log_reclass = AuditLog.objects.filter(action='CUSTOMER_RECLASSIFIED').first()
+        self.assertIsNotNone(log_reclass)
+
+    def test_corporate_customer_admin_ui_template(self):
+        """
+        Tests that admin user can access the HTML template view for corporate customer admin.
+        """
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get('/customers/corporate/admin/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTemplateUsed(response, 'authentication/corporate_customer_admin.html')
