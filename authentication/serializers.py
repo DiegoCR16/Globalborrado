@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Role, SystemPermission, Customer, TransactionLimit, KYCAlert
+from .models import Role, SystemPermission, Customer, TransactionLimit, KYCAlert, ClientDocument
 
 class SystemPermissionSerializer(serializers.ModelSerializer):
     """
@@ -186,3 +186,29 @@ class KYCAlertSerializer(serializers.ModelSerializer):
     class Meta:
         model = KYCAlert
         fields = ['id', 'customer', 'customer_name', 'alert_type', 'amount', 'status', 'details', 'created_at']
+
+
+class ClientDocumentSerializer(serializers.ModelSerializer):
+    """
+    Serializer for ClientDocument model (PSE-7).
+    
+    Attributes:
+        id (int): Document ID.
+        customer (Customer): Associated customer ID.
+        customer_name (str): Customer representation string.
+        document_type (str): Document type.
+        file_name (str): Original file name.
+        file_url (str): File URL / path.
+        status (str): Verification status ('PENDING', 'VERIFIED', 'REJECTED').
+        uploaded_at (datetime): Upload timestamp.
+    """
+    customer_name = serializers.CharField(source='customer.__str__', read_only=True)
+    document_type_display = serializers.CharField(source='get_document_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = ClientDocument
+        fields = [
+            'id', 'customer', 'customer_name', 'document_type', 'document_type_display',
+            'file_name', 'file_url', 'status', 'status_display', 'uploaded_at'
+        ]
