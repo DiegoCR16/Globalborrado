@@ -18,7 +18,7 @@ from django.contrib import admin
 from django.urls import path, include
 from authentication.views import (
     RoleAdminTemplateView, CustomerAdminTemplateView, CorporateCustomerAdminTemplateView, 
-    KYCLimitsAdminTemplateView, MainMenuTemplateView
+    KYCLimitsAdminTemplateView, MainMenuTemplateView, ClientDocumentsAdminTemplateView
 )
 
 urlpatterns = [
@@ -29,4 +29,5 @@ urlpatterns = [
     path('customers/corporate/admin/', CorporateCustomerAdminTemplateView.as_view(), name='corporate-customer-admin-ui-root'),
     path('limits/kyc/admin/', KYCLimitsAdminTemplateView.as_view(), name='kyc-limits-admin-ui-root'),
     path('menu/', MainMenuTemplateView.as_view(), name='main-menu-ui-root'),
+    path('documents/admin/', ClientDocumentsAdminTemplateView.as_view(), name='client-documents-admin-ui-root'),
 ]

@@ -229,3 +229,43 @@ class KYCAlert(models.Model):
         Returns string representation of KYC alert.
         """
         return f"KYC Alert [{self.alert_type}] - {self.customer} - {self.amount} PYG [{self.status}]"
+
+
+class ClientDocument(models.Model):
+    """
+    Model representing digitalized client documentation (KYC documents, CI, income proof, etc. - PSE-7).
+    
+    Attributes:
+        customer (Customer): Associated customer.
+        document_type (str): Type of document ('CI_FRONT', 'CI_BACK', 'RUC_CERT', 'INCOME_PROOF', 'KYC_FORM').
+        file_name (str): Original file name.
+        file_url (str): Storage path or URL.
+        status (str): Verification status ('PENDING', 'VERIFIED', 'REJECTED').
+        uploaded_at (datetime): Upload timestamp.
+    """
+    DOCUMENT_TYPE_CHOICES = [
+        ('CI_FRONT', 'Cédula de Identidad (Anverso)'),
+        ('CI_BACK', 'Cédula de Identidad (Reverso)'),
+        ('RUC_CERT', 'Certificado de RUC'),
+        ('INCOME_PROOF', 'Comprobante de Ingresos'),
+        ('KYC_FORM', 'Formulario KYC Completado'),
+    ]
+
+    STATUS_CHOICES = [
+        ('PENDING', 'Pendiente de Verificación'),
+        ('VERIFIED', 'Verificado y Aprobado'),
+        ('REJECTED', 'Rechazado'),
+    ]
+
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='documents')
+    document_type = models.CharField(max_length=50, choices=DOCUMENT_TYPE_CHOICES)
+    file_name = models.CharField(max_length=255)
+    file_url = models.CharField(max_length=500, blank=True, null=True)
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='PENDING')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        """
+        Returns string representation of client document.
+        """
+        return f"{self.get_document_type_display()} - {self.customer} [{self.status}]"

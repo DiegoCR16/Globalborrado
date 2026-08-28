@@ -7,10 +7,10 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, BasePermission
-from .models import AuditLog, UserProfile, Role, SystemPermission, Customer, TransactionLimit, KYCAlert
+from .models import AuditLog, UserProfile, Role, SystemPermission, Customer, TransactionLimit, KYCAlert, ClientDocument
 from .serializers import (
     RoleSerializer, SystemPermissionSerializer, CustomerSerializer, 
-    CorporateCustomerRegisterSerializer, TransactionLimitSerializer, KYCAlertSerializer
+    CorporateCustomerRegisterSerializer, TransactionLimitSerializer, KYCAlertSerializer, ClientDocumentSerializer
 )
 
 
@@ -825,14 +825,17 @@ class UserMenuView(APIView):
                 {'name': 'Gestión de Clientes', 'url': '/customers/admin/', 'description': 'Registro y alta de clientes (PSE-2).'},
                 {'name': 'Personas Jurídicas', 'url': '/customers/corporate/admin/', 'description': 'Registro de empresas y Keycloak SSO (PSE-3).'},
                 {'name': 'Límites y Alertas KYC', 'url': '/limits/kyc/admin/', 'description': 'Parametrización de límites y cumplimiento (PSE-6).'},
+                {'name': 'Gestión Documental KYC', 'url': '/documents/admin/', 'description': 'Carga, visualización y auditoría de documentos (PSE-7).'},
             ])
         elif role == 'CORPORATE_CLIENT':
             menu_items.extend([
                 {'name': 'Portal Corporativo', 'url': '/customers/corporate/admin/', 'description': 'Gestión de cuenta corporativa.'},
+                {'name': 'Mis Documentos', 'url': '/documents/admin/', 'description': 'Subida y estado de documentos KYC.'},
             ])
         elif role == 'EXCHANGE_ANALYST':
             menu_items.extend([
                 {'name': 'Cumplimiento KYC', 'url': '/limits/kyc/admin/', 'description': 'Monitoreo de alertas de cumplimiento.'},
+                {'name': 'Gestión Documental', 'url': '/documents/admin/', 'description': 'Auditoría de documentación digitalizada.'},
             ])
 
         return Response({
@@ -858,4 +861,78 @@ class MainMenuTemplateView(APIView):
         return render(request, 'authentication/main_menu.html', {
             'username': request.user.username,
             'role': profile.role
+        })
+
+
+class ClientDocumentView(APIView):
+    """
+    API view for uploading, listing, and auditing digitalized client documentation (KYC - PSE-7).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Lists all client documents, with optional customer_id filtering.
+        """
+        customer_id = request.query_params.get('customer_id')
+        documents = ClientDocument.objects.all()
+        if customer_id:
+            documents = documents.filter(customer_id=customer_id)
+        serializer = ClientDocumentSerializer(documents, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """
+        Uploads/registers a new digitalized document for a customer.
+        """
+        serializer = ClientDocumentSerializer(data=request.data)
+        if serializer.is_valid():
+            doc = serializer.save()
+            AuditLog.objects.create(
+                user_identifier=request.user.username,
+                action='CLIENT_DOCUMENT_UPLOADED',
+                ip_address=request.META.get('REMOTE_ADDR', '127.0.0.1'),
+                details=f"Documento '{doc.get_document_type_display()}' subido para el cliente #{doc.customer.id}."
+            )
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, pk):
+        """
+        Audits and updates document verification status (VERIFIED, REJECTED, PENDING).
+        """
+        try:
+            doc = ClientDocument.objects.get(pk=pk)
+        except ClientDocument.DoesNotExist:
+            return Response({"error": "Documento no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        new_status = request.data.get('status')
+        if new_status not in ['PENDING', 'VERIFIED', 'REJECTED']:
+            return Response({"error": "Estado de verificación inválido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        doc.status = new_status
+        doc.save()
+
+        AuditLog.objects.create(
+            user_identifier=request.user.username,
+            action='CLIENT_DOCUMENT_AUDITED',
+            ip_address=request.META.get('REMOTE_ADDR', '127.0.0.1'),
+            details=f"Documento #{doc.id} ({doc.get_document_type_display()}) auditado y marcado como {new_status}."
+        )
+
+        return Response(ClientDocumentSerializer(doc).data, status=status.HTTP_200_OK)
+
+
+class ClientDocumentsAdminTemplateView(APIView):
+    """
+    Frontend view rendering the Client Documentation Upload and Audit GUI (PSE-7).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Renders the client documentation HTML interface.
+        """
+        return render(request, 'authentication/client_documents_admin.html', {
+            'username': request.user.username
         })

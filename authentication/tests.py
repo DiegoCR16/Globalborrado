@@ -2,7 +2,7 @@ from django.test import TestCase
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from rest_framework import status
-from .models import UserProfile, AuditLog, Role, SystemPermission, Customer, TransactionLimit, KYCAlert
+from .models import UserProfile, AuditLog, Role, SystemPermission, Customer, TransactionLimit, KYCAlert, ClientDocument
 
 
 class AuthenticationTests(TestCase):
@@ -549,3 +549,90 @@ class UserMenuNavigationTests(TestCase):
         response = self.client.get('/menu/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTemplateUsed(response, 'authentication/main_menu.html')
+
+
+class ClientDocumentManagementTests(TestCase):
+    """
+    Test suite for Digital Client Documentation Management and KYC Audit (PSE-7).
+    """
+
+    def setUp(self):
+        """
+        Sets up admin user, customer, and test client.
+        """
+        self.admin_user = User.objects.create_user(username='admin_docs', password='password123', is_staff=True)
+        self.admin_profile, _ = UserProfile.objects.get_or_create(user=self.admin_user, role='ADMIN')
+
+        self.customer = Customer.objects.create(
+            first_name='Carlos',
+            last_name='Benítez',
+            document_number='4567891-3',
+            client_type='VIP',
+            email='carlos.benitez@example.com'
+        )
+        self.client = APIClient()
+
+    def test_client_document_upload_and_list(self):
+        """
+        Tests uploading a digitalized client document and listing documents (PSE-7).
+        """
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post('/api/documents/', {
+            'customer': self.customer.id,
+            'document_type': 'CI_FRONT',
+            'file_name': 'cedula_carlos.pdf',
+            'file_url': '/media/docs/cedula_carlos.pdf'
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status'], 'PENDING')
+        doc_id = response.data['id']
+
+        log_upload = AuditLog.objects.filter(action='CLIENT_DOCUMENT_UPLOADED').first()
+        self.assertIsNotNone(log_upload)
+
+        # List documents
+        res_list = self.client.get('/api/documents/')
+        self.assertEqual(res_list.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(res_list.data), 1)
+
+    def test_client_document_audit_verification(self):
+        """
+        Tests auditing and updating document verification status to VERIFIED (PSE-7).
+        """
+        self.client.force_authenticate(user=self.admin_user)
+        doc = ClientDocument.objects.create(
+            customer=self.customer,
+            document_type='INCOME_PROOF',
+            file_name='comprobante.pdf',
+            status='PENDING'
+        )
+
+        response = self.client.patch(f'/api/documents/{doc.id}/', {
+            'status': 'VERIFIED'
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'VERIFIED')
+
+        log_audit = AuditLog.objects.filter(action='CLIENT_DOCUMENT_AUDITED').first()
+        self.assertIsNotNone(log_audit)
+
+    def test_client_documents_admin_ui_template(self):
+        """
+        Tests that admin user can access the client documents administration HTML template view.
+        """
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get('/documents/admin/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTemplateUsed(response, 'authentication/client_documents_admin.html')
+
+    def test_menu_includes_documents_module(self):
+        """
+        Tests that the dynamic menu API includes the document management module for admin users.
+        """
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get('/api/menu/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        urls = [item['url'] for item in response.data['menu_items']]
+        self.assertIn('/documents/admin/', urls)
