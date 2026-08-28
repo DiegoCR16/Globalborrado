@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, BasePermission
 from .models import AuditLog, UserProfile, Role, SystemPermission, Customer
-from .serializers import RoleSerializer, SystemPermissionSerializer, CustomerSerializer
+from .serializers import RoleSerializer, SystemPermissionSerializer, CustomerSerializer, CorporateCustomerRegisterSerializer
 
 
 class IsAdminOrHasRolePermission(BasePermission):
@@ -505,5 +505,123 @@ class CustomerAdminTemplateView(APIView):
         Renders the customer administration HTML interface.
         """
         return render(request, 'authentication/customer_admin.html', {
+            'username': request.user.username
+        })
+
+
+class CorporateCustomerRegisterView(APIView):
+    """
+    API view handling Corporate Customer (Persona Jurídica) registration with Keycloak delegation (PSE-3).
+    """
+    permission_classes = [] # Allow public or authenticated corporate registration per requirements
+
+    def post(self, request):
+        """
+        Registers a corporate customer, validates RUC, corporate email, password security,
+        delegates account creation to Keycloak, and logs the audit event.
+        
+        Args:
+            request (Request): HTTP request containing company_name, ruc, email, password, phone, address.
+            
+        Returns:
+            Response: Success message and created customer data or validation errors.
+        """
+        serializer = CorporateCustomerRegisterSerializer(data=request.data)
+        if serializer.is_valid():
+            customer = serializer.save()
+            AuditLog.objects.create(
+                user_identifier=customer.email,
+                action='CORPORATE_CUSTOMER_REGISTERED',
+                ip_address=request.META.get('REMOTE_ADDR', '127.0.0.1'),
+                details=f"Cliente corporativo '{customer.company_name}' (RUC: {customer.ruc}) registrado y delegado a Keycloak exitosamente."
+            )
+            return Response({
+                'message': 'Registro de persona jurídica completado exitosamente con delegación a Keycloak.',
+                'customer': CustomerSerializer(customer).data
+            }, status=status.HTTP_201_CREATED)
+
+        AuditLog.objects.create(
+            user_identifier=request.data.get('email', 'unknown'),
+            action='CORPORATE_CUSTOMER_REGISTRATION_FAILED',
+            ip_address=request.META.get('REMOTE_ADDR', '127.0.0.1'),
+            details=str(serializer.errors)
+        )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CustomerClassificationView(APIView):
+    """
+    API view managing customer classification and segmentation (PSE-3).
+    """
+    permission_classes = [IsAuthenticated, IsAdminOrHasRolePermission]
+
+    def get(self, request):
+        """
+        Retrieves customers segmented by classification categories (RETAIL, CORPORATE, VIP)
+        with summary metrics.
+        """
+        retail_count = Customer.objects.filter(client_type='RETAIL').count()
+        corporate_count = Customer.objects.filter(client_type='CORPORATE').count()
+        vip_count = Customer.objects.filter(client_type='VIP').count()
+
+        customers = Customer.objects.all()
+        serializer = CustomerSerializer(customers, many=True)
+
+        return Response({
+            'segmentation_summary': {
+                'retail_count': retail_count,
+                'corporate_count': corporate_count,
+                'vip_count': vip_count,
+                'total_customers': customers.count()
+            },
+            'customers': serializer.data
+        }, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """
+        Updates or re-classifies a customer's segment category.
+        """
+        customer_id = request.data.get('customer_id')
+        new_category = request.data.get('client_type')
+
+        if not customer_id or not new_category:
+            return Response({"error": "customer_id y client_type son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            customer = Customer.objects.get(pk=customer_id)
+        except Customer.DoesNotExist:
+            return Response({"error": "Cliente no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        if new_category not in ['RETAIL', 'CORPORATE', 'VIP']:
+            return Response({"error": "Categoría de segmentación inválida."}, status=status.HTTP_400_BAD_REQUEST)
+
+        old_type = customer.client_type
+        customer.client_type = new_category
+        customer.save()
+
+        AuditLog.objects.create(
+            user_identifier=request.user.username,
+            action='CUSTOMER_RECLASSIFIED',
+            ip_address=request.META.get('REMOTE_ADDR', '127.0.0.1'),
+            details=f"Cliente '{customer.company_name or customer.email}' reclasificado de {old_type} a {new_category}."
+        )
+
+        return Response({
+            'message': f"Cliente reclasificado exitosamente a {new_category}.",
+            'customer': CustomerSerializer(customer).data
+        }, status=status.HTTP_200_OK)
+
+
+class CorporateCustomerAdminTemplateView(APIView):
+    """
+    Frontend view rendering the Corporate Customer Registration and Classification GUI (PSE-3).
+    """
+    permission_classes = [IsAuthenticated, IsAdminOrHasRolePermission]
+
+    def get(self, request):
+        """
+        Renders the corporate customer administration and classification HTML interface.
+        """
+        return render(request, 'authentication/corporate_customer_admin.html', {
             'username': request.user.username
         })

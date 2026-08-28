@@ -9,7 +9,10 @@ from .views import (
     RoleAdminTemplateView,
     CustomerListCreateView,
     CustomerDetailView,
-    CustomerAdminTemplateView
+    CustomerAdminTemplateView,
+    CorporateCustomerRegisterView,
+    CustomerClassificationView,
+    CorporateCustomerAdminTemplateView
 )
 
 urlpatterns = [
@@ -23,4 +26,7 @@ urlpatterns = [
     path('customers/', CustomerListCreateView.as_view(), name='customer-list-create'),
     path('customers/<int:pk>/', CustomerDetailView.as_view(), name='customer-detail'),
     path('customers/admin/', CustomerAdminTemplateView.as_view(), name='customers-admin-ui'),
+    path('corporate-customers/register/', CorporateCustomerRegisterView.as_view(), name='corporate-customer-register'),
+    path('customers/classification/', CustomerClassificationView.as_view(), name='customer-classification'),
+    path('customers/corporate/admin/', CorporateCustomerAdminTemplateView.as_view(), name='corporate-customer-admin-ui'),
 ]

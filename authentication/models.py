@@ -125,17 +125,20 @@ class UserProfile(models.Model):
 
 class Customer(models.Model):
     """
-    Model representing bank customers with segmentation and profile management (PSE-2).
+    Model representing bank customers with segmentation and profile management (PSE-2, PSE-3).
     
     Attributes:
         first_name (str): Customer's first name.
         last_name (str): Customer's last name.
         document_number (str): Unique identification number (CI or RUC).
+        company_name (str): Company name for legal entities (Persona Jurídica - PSE-3).
+        ruc (str): RUC for legal entities (PSE-3).
         client_type (str): Segmentation category ('RETAIL', 'CORPORATE', 'VIP').
         email (str): Unique contact email address.
         phone (str): Contact phone number.
         address (str): Physical address.
         is_active (bool): Whether the customer profile is active.
+        keycloak_synced (bool): Whether account is synced with Keycloak IdP (PSE-3).
         created_at (datetime): Creation timestamp.
         updated_at (datetime): Last modification timestamp.
     """
@@ -145,14 +148,17 @@ class Customer(models.Model):
         ('VIP', 'Cliente VIP'),
     ]
 
-    first_name = models.CharField(max_length=150)
-    last_name = models.CharField(max_length=150)
-    document_number = models.CharField(max_length=50, unique=True)
+    first_name = models.CharField(max_length=150, blank=True, null=True)
+    last_name = models.CharField(max_length=150, blank=True, null=True)
+    document_number = models.CharField(max_length=50, unique=True, blank=True, null=True)
+    company_name = models.CharField(max_length=200, blank=True, null=True)
+    ruc = models.CharField(max_length=50, blank=True, null=True, unique=True)
     client_type = models.CharField(max_length=50, choices=CLIENT_TYPE_CHOICES, default='RETAIL')
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=50, blank=True, null=True)
     address = models.TextField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
+    keycloak_synced = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -161,6 +167,8 @@ class Customer(models.Model):
         Returns string representation of the customer.
         
         Returns:
-            str: Full name, document number, and client type.
+            str: Full name or company name, document/RUC, and client type.
         """
-        return f"{self.first_name} {self.last_name} ({self.document_number}) - {self.client_type}"
+        name = self.company_name or f"{self.first_name or ''} {self.last_name or ''}".strip()
+        doc = self.ruc or self.document_number or 'N/A'
+        return f"{name} ({doc}) - {self.client_type}"
