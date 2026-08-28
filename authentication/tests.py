@@ -491,3 +491,61 @@ class KYCLimitsAndComplianceTests(TestCase):
         response = self.client.get('/limits/kyc/admin/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTemplateUsed(response, 'authentication/kyc_limits_admin.html')
+
+
+class UserMenuNavigationTests(TestCase):
+    """
+    Test suite for Main Menu Structure and Dynamic Navigation based on user role and permissions (PSE-28).
+    """
+
+    def setUp(self):
+        """
+        Sets up admin user, corporate user, retail user, and test client.
+        """
+        self.admin_user = User.objects.create_user(username='admin_menu', password='password123', is_staff=True)
+        self.admin_profile, _ = UserProfile.objects.get_or_create(user=self.admin_user, role='ADMIN')
+
+        self.corp_user = User.objects.create_user(username='corp_menu', password='password123')
+        self.corp_profile, _ = UserProfile.objects.get_or_create(user=self.corp_user, role='CORPORATE_CLIENT')
+
+        self.client = APIClient()
+
+    def test_user_menu_api_admin(self):
+        """
+        Tests that the menu API returns administrative modules for an admin user (PSE-28).
+        """
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get('/api/menu/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['role'], 'ADMIN')
+        
+        # Verify admin menu items exist
+        menu_items = response.data['menu_items']
+        urls = [item['url'] for item in menu_items]
+        self.assertIn('/roles/admin/', urls)
+        self.assertIn('/customers/admin/', urls)
+        self.assertIn('/limits/kyc/admin/', urls)
+
+    def test_user_menu_api_corporate(self):
+        """
+        Tests that the menu API returns corporate modules for a corporate client user (PSE-28).
+        """
+        self.client.force_authenticate(user=self.corp_user)
+        response = self.client.get('/api/menu/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['role'], 'CORPORATE_CLIENT')
+
+        menu_items = response.data['menu_items']
+        urls = [item['url'] for item in menu_items]
+        self.assertIn('/customers/corporate/admin/', urls)
+
+    def test_main_menu_template_view(self):
+        """
+        Tests that authenticated user can access the main menu template view successfully.
+        """
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get('/menu/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTemplateUsed(response, 'authentication/main_menu.html')

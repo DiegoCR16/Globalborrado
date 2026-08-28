@@ -798,3 +798,64 @@ class KYCLimitsAdminTemplateView(APIView):
         return render(request, 'authentication/kyc_limits_admin.html', {
             'username': request.user.username
         })
+
+
+class UserMenuView(APIView):
+    """
+    API view providing the dynamic menu structure and permissions for the authenticated user (PSE-28).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Retrieves the list of menu items and accessible modules based on user role and permissions.
+        """
+        user = request.user
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        role = profile.role
+
+        menu_items = [
+            {'name': 'Dashboard', 'url': '/dashboard/', 'description': 'Panel general de operaciones.'},
+            {'name': 'Simulación Cambiaria', 'url': '/api/exchange/simulate/', 'description': 'Simulador de compra y venta de divisas.'},
+        ]
+
+        if role == 'ADMIN' or user.is_superuser:
+            menu_items.extend([
+                {'name': 'Gestión de Roles (Admin)', 'url': '/roles/admin/', 'description': 'Administración de roles y permisos granulares (PSE-26).'},
+                {'name': 'Gestión de Clientes', 'url': '/customers/admin/', 'description': 'Registro y alta de clientes (PSE-2).'},
+                {'name': 'Personas Jurídicas', 'url': '/customers/corporate/admin/', 'description': 'Registro de empresas y Keycloak SSO (PSE-3).'},
+                {'name': 'Límites y Alertas KYC', 'url': '/limits/kyc/admin/', 'description': 'Parametrización de límites y cumplimiento (PSE-6).'},
+            ])
+        elif role == 'CORPORATE_CLIENT':
+            menu_items.extend([
+                {'name': 'Portal Corporativo', 'url': '/customers/corporate/admin/', 'description': 'Gestión de cuenta corporativa.'},
+            ])
+        elif role == 'EXCHANGE_ANALYST':
+            menu_items.extend([
+                {'name': 'Cumplimiento KYC', 'url': '/limits/kyc/admin/', 'description': 'Monitoreo de alertas de cumplimiento.'},
+            ])
+
+        return Response({
+            'username': user.username,
+            'email': user.email,
+            'role': role,
+            'mfa_required': profile.mfa_required,
+            'menu_items': menu_items
+        }, status=status.HTTP_200_OK)
+
+
+class MainMenuTemplateView(APIView):
+    """
+    Frontend view rendering the Main Menu and dynamic navigation bar interface (PSE-28).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Renders the main menu HTML interface.
+        """
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        return render(request, 'authentication/main_menu.html', {
+            'username': request.user.username,
+            'role': profile.role
+        })
