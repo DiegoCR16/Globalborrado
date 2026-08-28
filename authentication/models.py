@@ -7,7 +7,7 @@ class AuditLog(models.Model):
     
     Attributes:
         user_identifier (str): Username or email used in the attempt.
-        action (str): Description of the action (e.g., 'LOGIN_SUCCESS', 'LOGIN_FAILED').
+        action (str): Description of the action (e.g., 'LOGIN_SUCCESS', 'ROLE_CREATED').
         ip_address (str): IP address of the client.
         timestamp (datetime): Exact date and time of the event.
         details (str): Additional context or error details.
@@ -28,6 +28,61 @@ class AuditLog(models.Model):
         return f"[{self.timestamp}] {self.action} - {self.user_identifier}"
 
 
+class SystemPermission(models.Model):
+    """
+    Model representing granular permissions in Global Exchange system (PSE-26).
+    
+    Attributes:
+        code (str): Unique system code for the permission (e.g., 'MANAGE_ROLES').
+        name (str): Human-readable permission name.
+        description (str): Detailed description of what the permission allows.
+    """
+    code = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=150)
+    description = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        """
+        Returns string representation of permission.
+        
+        Returns:
+            str: Permission name and code.
+        """
+        return f"{self.name} ({self.code})"
+
+
+class Role(models.Model):
+    """
+    Model representing user roles with granular permissions and Keycloak synchronization (PSE-26).
+    
+    Attributes:
+        name (str): Unique role name (e.g., 'ADMINISTRADOR', 'ANALISTA_CAMBIARIO').
+        description (str): Role description.
+        permissions (ManyToManyField): Granular permissions assigned to this role.
+        is_active (bool): Whether the role is active or deactivated.
+        keycloak_synced (bool): Flag indicating synchronization status with Keycloak policies.
+        created_at (datetime): Timestamp when the role was created.
+        updated_at (datetime): Timestamp when the role was last updated.
+    """
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, null=True)
+    permissions = models.ManyToManyField(SystemPermission, related_name='roles', blank=True)
+    is_active = models.BooleanField(default=True)
+    keycloak_synced = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        """
+        Returns string representation of role.
+        
+        Returns:
+            str: Role name and status.
+        """
+        status = "Activo" if self.is_active else "Inactivo"
+        return f"{self.name} [{status}]"
+
+
 class UserProfile(models.Model):
     """
     Extended user profile supporting roles and MFA requirements for Global Exchange.
@@ -35,16 +90,19 @@ class UserProfile(models.Model):
     Attributes:
         user (User): Associated Django auth user.
         role (str): Assigned role (e.g., 'ADMIN', 'CORPORATE_CLIENT', 'RETAIL_CLIENT').
+        role_ref (Role): Optional ForeignKey reference to dynamic Role model.
         mfa_required (bool): Whether Multi-Factor Authentication / iToken is strictly required.
     """
     ROLE_CHOICES = [
         ('ADMIN', 'Administrador'),
         ('CORPORATE_CLIENT', 'Cliente Corporativo'),
         ('RETAIL_CLIENT', 'Cliente Minorista'),
+        ('EXCHANGE_ANALYST', 'Analista Cambiario'),
     ]
     
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=50, choices=ROLE_CHOICES, default='RETAIL_CLIENT')
+    role_ref = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
     mfa_required = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
