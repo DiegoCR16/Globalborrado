@@ -7,8 +7,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, BasePermission
-from .models import AuditLog, UserProfile, Role, SystemPermission
-from .serializers import RoleSerializer, SystemPermissionSerializer
+from .models import AuditLog, UserProfile, Role, SystemPermission, Customer
+from .serializers import RoleSerializer, SystemPermissionSerializer, CustomerSerializer
 
 
 class IsAdminOrHasRolePermission(BasePermission):
@@ -372,5 +372,138 @@ class RoleAdminTemplateView(APIView):
         Renders the roles administration HTML interface.
         """
         return render(request, 'authentication/roles_admin.html', {
+            'username': request.user.username
+        })
+
+
+class CustomerListCreateView(APIView):
+    """
+    API view to list all customers with optional segmentation filtering and register new customers (PSE-2).
+    """
+    permission_classes = [IsAuthenticated, IsAdminOrHasRolePermission]
+
+    def get(self, request):
+        """
+        Retrieves list of customers, filtering by client_type if provided.
+        
+        Args:
+            request (Request): HTTP request.
+            
+        Returns:
+            Response: Serialized list of customers.
+        """
+        client_type = request.query_params.get('client_type')
+        customers = Customer.objects.all()
+        if client_type:
+            customers = customers.filter(client_type=client_type)
+        serializer = CustomerSerializer(customers, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """
+        Registers a new customer in the system and logs the audit event.
+        
+        Args:
+            request (Request): HTTP request containing customer details.
+            
+        Returns:
+            Response: Created customer data or validation errors.
+        """
+        serializer = CustomerSerializer(data=request.data)
+        if serializer.is_valid():
+            customer = serializer.save()
+            AuditLog.objects.create(
+                user_identifier=request.user.username,
+                action='CUSTOMER_CREATED',
+                ip_address=request.META.get('REMOTE_ADDR', '127.0.0.1'),
+                details=f"Cliente '{customer.first_name} {customer.last_name}' ({customer.document_number}) registrado exitosamente."
+            )
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
+        AuditLog.objects.create(
+            user_identifier=request.user.username,
+            action='CUSTOMER_CREATION_FAILED',
+            ip_address=request.META.get('REMOTE_ADDR', '127.0.0.1'),
+            details=str(serializer.errors)
+        )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CustomerDetailView(APIView):
+    """
+    API view to retrieve, modify (update), or deactivate a customer profile (PSE-2).
+    """
+    permission_classes = [IsAuthenticated, IsAdminOrHasRolePermission]
+
+    def get_object(self, pk):
+        """
+        Helper method to retrieve customer by primary key.
+        """
+        try:
+            return Customer.objects.get(pk=pk)
+        except Customer.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        """
+        Retrieves details of a specific customer profile.
+        """
+        customer = self.get_object(pk)
+        if not customer:
+            return Response({"error": "Cliente no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = CustomerSerializer(customer)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request, pk):
+        """
+        Modifies an existing customer profile and logs the update event.
+        """
+        customer = self.get_object(pk)
+        if not customer:
+            return Response({"error": "Cliente no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = CustomerSerializer(customer, data=request.data, partial=True)
+        if serializer.is_valid():
+            customer = serializer.save()
+            AuditLog.objects.create(
+                user_identifier=request.user.username,
+                action='CUSTOMER_UPDATED',
+                ip_address=request.META.get('REMOTE_ADDR', '127.0.0.1'),
+                details=f"Cliente '{customer.first_name} {customer.last_name}' actualizado exitosamente."
+            )
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        """
+        Deactivates a customer profile (soft delete) and logs the event.
+        """
+        customer = self.get_object(pk)
+        if not customer:
+            return Response({"error": "Cliente no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        
+        customer.is_active = False
+        customer.save()
+
+        AuditLog.objects.create(
+            user_identifier=request.user.username,
+            action='CUSTOMER_DEACTIVATED',
+            ip_address=request.META.get('REMOTE_ADDR', '127.0.0.1'),
+            details=f"Cliente '{customer.first_name} {customer.last_name}' desactivado exitosamente."
+        )
+        return Response({"message": f"Cliente '{customer.first_name} {customer.last_name}' desactivado correctamente."}, status=status.HTTP_200_OK)
+
+
+class CustomerAdminTemplateView(APIView):
+    """
+    Frontend view rendering the customer registration and administration GUI (PSE-2).
+    """
+    permission_classes = [IsAuthenticated, IsAdminOrHasRolePermission]
+
+    def get(self, request):
+        """
+        Renders the customer administration HTML interface.
+        """
+        return render(request, 'authentication/customer_admin.html', {
             'username': request.user.username
         })

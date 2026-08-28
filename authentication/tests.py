@@ -203,3 +203,75 @@ class RolePermissionManagementTests(TestCase):
         response = self.client.get('/roles/admin/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTemplateUsed(response, 'authentication/roles_admin.html')
+
+
+class CustomerManagementTests(TestCase):
+    """
+    Test suite for Customer Registration, Profile Management, Segmentation, and Audit Logging (PSE-2).
+    """
+
+    def setUp(self):
+        """
+        Sets up admin user, regular user, and test client.
+        """
+        self.admin_user = User.objects.create_user(username='admin_customer', password='password123', is_staff=True)
+        self.admin_profile, _ = UserProfile.objects.get_or_create(user=self.admin_user, role='ADMIN')
+
+        self.client = APIClient()
+
+    def test_customer_registration_and_crud(self):
+        """
+        Tests customer registration, listing with segmentation, profile update, and deactivation (PSE-2).
+        """
+        self.client.force_authenticate(user=self.admin_user)
+
+        # 1. Register Customer (POST)
+        response = self.client.post('/api/customers/', {
+            'first_name': 'Juan',
+            'last_name': 'Pérez',
+            'document_number': '1234567-1',
+            'client_type': 'VIP',
+            'email': 'juan.perez@example.com',
+            'phone': '0981123456',
+            'address': 'Asunción, Paraguay'
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        customer_id = response.data['id']
+        self.assertEqual(response.data['client_type'], 'VIP')
+        self.assertTrue(response.data['is_active'])
+
+        # Verify Audit Log
+        log_create = AuditLog.objects.filter(user_identifier='admin_customer', action='CUSTOMER_CREATED').first()
+        self.assertIsNotNone(log_create)
+
+        # 2. List Customers and filter by client_type
+        response_list = self.client.get('/api/customers/?client_type=VIP')
+        self.assertEqual(response_list.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response_list.data), 1)
+
+        # 3. Update Customer Profile (PUT)
+        response_update = self.client.put(f'/api/customers/{customer_id}/', {
+            'phone': '0982999888'
+        }, format='json')
+        self.assertEqual(response_update.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_update.data['phone'], '0982999888')
+
+        log_update = AuditLog.objects.filter(user_identifier='admin_customer', action='CUSTOMER_UPDATED').first()
+        self.assertIsNotNone(log_update)
+
+        # 4. Deactivate Customer (DELETE / soft delete)
+        response_delete = self.client.delete(f'/api/customers/{customer_id}/')
+        self.assertEqual(response_delete.status_code, status.HTTP_200_OK)
+
+        log_deactivate = AuditLog.objects.filter(user_identifier='admin_customer', action='CUSTOMER_DEACTIVATED').first()
+        self.assertIsNotNone(log_deactivate)
+
+    def test_customer_admin_ui_template(self):
+        """
+        Tests that admin user can access the HTML template view for customer administration.
+        """
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get('/customers/admin/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTemplateUsed(response, 'authentication/customer_admin.html')

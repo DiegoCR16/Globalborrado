@@ -6,7 +6,10 @@ from .views import (
     RoleListCreateView,
     RoleDetailView,
     RolePermissionAssignView,
-    RoleAdminTemplateView
+    RoleAdminTemplateView,
+    CustomerListCreateView,
+    CustomerDetailView,
+    CustomerAdminTemplateView
 )
 
 urlpatterns = [
@@ -17,4 +20,7 @@ urlpatterns = [
     path('roles/<int:pk>/', RoleDetailView.as_view(), name='role-detail'),
     path('roles/<int:pk>/permissions/', RolePermissionAssignView.as_view(), name='role-permission-assign'),
     path('roles/admin/', RoleAdminTemplateView.as_view(), name='roles-admin-ui'),
+    path('customers/', CustomerListCreateView.as_view(), name='customer-list-create'),
+    path('customers/<int:pk>/', CustomerDetailView.as_view(), name='customer-detail'),
+    path('customers/admin/', CustomerAdminTemplateView.as_view(), name='customers-admin-ui'),
 ]
