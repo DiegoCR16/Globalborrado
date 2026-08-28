@@ -15,7 +15,8 @@ from .views import (
     CorporateCustomerAdminTemplateView,
     TransactionLimitView,
     KYCAlertView,
-    TransactionLimitValidationView
+    TransactionLimitValidationView,
+    UserMenuView
 )
 
 urlpatterns = [
@@ -36,4 +37,5 @@ urlpatterns = [
     path('kyc-alerts/', KYCAlertView.as_view(), name='kyc-alerts'),
     path('kyc-alerts/<int:pk>/', KYCAlertView.as_view(), name='kyc-alert-detail'),
     path('transactions/validate-limit/', TransactionLimitValidationView.as_view(), name='transaction-validate-limit'),
+    path('menu/', UserMenuView.as_view(), name='user-menu-api'),
 ]
